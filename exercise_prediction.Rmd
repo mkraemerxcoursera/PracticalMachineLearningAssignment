@@ -1,0 +1,98 @@
+---
+title: "Classification of body movements to excercise correctness"
+author: "Michael Krämer"
+date: "20.11.2015"
+output: 
+  html_document:
+    keep_md: true
+    fig_caption: yes
+---
+
+## Synopsis
+We investigated some movement data to predict correctness of excercises. The data is generously provided by the HAR Project, see http://groupware.les.inf.puc-rio.br/har for details.
+
+## Data processing
+
+### Loading and preprocessing the data
+The training and test data is read completely into R.
+
+```{r initialization}
+# load libs
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(R.utils))
+library(ggplot2)
+library(knitr)
+library(xtable)
+library(lubridate)
+library(scales)
+library(caret)
+set.seed(1704)
+```
+```{r downloading, cache=TRUE}
+# getting, unzipping of data
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile="pml-training.csv", method="curl")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile="pml-testing.csv", method="curl")
+```
+```{r reading, cache=TRUE}
+# reading of data
+train_data_raw <- tbl_df(read.csv("pml-training.csv", stringsAsFactors = FALSE))
+test_data <- tbl_df(read.csv("pml-testing.csv", stringsAsFactors = FALSE))
+ncol(train_data_raw)
+```
+
+Since the data sets consists of 160 variables, I won't show plots of the data since I don't have a useful visualization there.
+
+### Test and training sets
+I extract a small set from the training data for internal testing.
+
+```{r}
+in_train <- createDataPartition(y = train_data_raw$classe, p = 0.995, list = FALSE)
+train_data <- train_data_raw[in_train,]
+train_test_data <- train_data_raw[-in_train,]
+nrow(train_data)
+nrow(train_test_data)
+```
+
+### Further processing
+The approach to find predictors here had to be kind of pragmatic since I'm not an expert regarding the study, the field of excercising movements and the data. Additionally, the data contains many variables with dirty data. So I decided to check out manually which variables the test data set actually has filled and selected only these columns from test and training data sets for further processing. It turns out that this in our case leads to a clean training data set without NA values.
+
+```{r cleaning_part, cache=TRUE}
+train_data_f <- train_data %>% select(starts_with("raw_time"), num_window, roll_belt, pitch_belt, yaw_belt, total_accel_belt, ends_with("belt_x"), ends_with("belt_y"), ends_with("belt_z"), roll_arm, pitch_arm, yaw_arm, total_accel_arm, ends_with("arm_x"), ends_with("arm_y"), ends_with("arm_z"), roll_dumbbell, pitch_dumbbell, yaw_dumbbell, total_accel_dumbbell, ends_with("dumbbell_x"), ends_with("dumbbell_y"), ends_with("dumbbell_z"), roll_forearm, pitch_forearm, yaw_forearm, total_accel_forearm, ends_with("forearm_x"), ends_with("forearm_y"), ends_with("forearm_z"))
+```
+
+To reduce variables further, I investigated correlations.
+
+```{r, cache=TRUE}
+correlationMatrix <- cor(train_data_f)
+names(train_data_f)[findCorrelation(correlationMatrix)]
+```
+
+This lead to a further reduction of variables and finally produced the following list. Here, the user_name was added in both sets and the classe in the training set.
+
+```{r, cache=TRUE}
+train_data_f <- train_data %>% select(user_name, starts_with("raw_time"), num_window, pitch_belt, yaw_belt, total_accel_belt, magnet_belt_x, gyros_belt_x, magnet_belt_y, gyros_belt_y, magnet_belt_z, gyros_belt_z, roll_arm, pitch_arm, yaw_arm, total_accel_arm, magnet_arm_x, accel_arm_x, ends_with("arm_y"), ends_with("arm_z"), roll_dumbbell, pitch_dumbbell, yaw_dumbbell, total_accel_dumbbell, magnet_dumbbell_x, accel_dumbbell_x, ends_with("dumbbell_y"), magnet_dumbbell_z, accel_dumbbell_z, roll_forearm, pitch_forearm, yaw_forearm, total_accel_forearm, ends_with("forearm_x"), ends_with("forearm_y"), ends_with("forearm_z"), classe)
+
+train_test_data_f <- train_test_data %>% select(user_name, starts_with("raw_time"), num_window, pitch_belt, yaw_belt, total_accel_belt, magnet_belt_x, gyros_belt_x, magnet_belt_y, gyros_belt_y, magnet_belt_z, gyros_belt_z, roll_arm, pitch_arm, yaw_arm, total_accel_arm, magnet_arm_x, accel_arm_x, ends_with("arm_y"), ends_with("arm_z"), roll_dumbbell, pitch_dumbbell, yaw_dumbbell, total_accel_dumbbell, magnet_dumbbell_x, accel_dumbbell_x, ends_with("dumbbell_y"), magnet_dumbbell_z, accel_dumbbell_z, roll_forearm, pitch_forearm, yaw_forearm, total_accel_forearm, ends_with("forearm_x"), ends_with("forearm_y"), ends_with("forearm_z"), classe)
+
+test_data_f <- test_data %>% select(X, user_name, starts_with("raw_time"), num_window, pitch_belt, yaw_belt, total_accel_belt, magnet_belt_x, gyros_belt_x, magnet_belt_y, gyros_belt_y, magnet_belt_z, gyros_belt_z, roll_arm, pitch_arm, yaw_arm, total_accel_arm, magnet_arm_x, accel_arm_x, ends_with("arm_y"), ends_with("arm_z"), roll_dumbbell, pitch_dumbbell, yaw_dumbbell, total_accel_dumbbell, magnet_dumbbell_x, accel_dumbbell_x, ends_with("dumbbell_y"), magnet_dumbbell_z, accel_dumbbell_z, roll_forearm, pitch_forearm, yaw_forearm, total_accel_forearm, ends_with("forearm_x"), ends_with("forearm_y"), ends_with("forearm_z"), problem_id)
+```
+
+I'll use train_data_f to train the model, train_test_data_f to specify out-of-sample error rate and finally test_data_f to predict the values. The final input data contains `r ncol(train_data_f)` variables.
+
+### Machine Learning
+The idea is to use a random forest to create the model. To limit computing time, I decided to use cross validation with k-fold of 3. I was not able to spend more computing time even if resampling might lead to a better fit.
+
+```{r learning, cache=TRUE}
+mod_fit <- train(classe ~ ., method="rf", data=train_data_f, prox=TRUE, trControl = trainControl(method="cv", number = 3, allowParallel=TRUE))
+mod_fit 
+```
+### Results and error rates
+now the generated fit will be used to predict the small part of the training set in train_test_data_f that was not used in the training algorithm.
+```{r accuracy, cache=TRUE}
+pred <- predict(mod_fit, newdata = train_test_data_f)
+confusionMatrix(pred, train_test_data_f$classe)
+```
+As seen in the table, in this case the algorithm shows an accuracy of 100% on out-of-sample data. That might be not the real accuracy because 100% is usually not achieved in practice, but the lower limit of the confidence interval of 96% still is a pretty good value.
+
+
+
