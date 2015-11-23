@@ -129,23 +129,23 @@ test_data_f &lt;- test_data %&gt;% select(X, user_name, starts_with(&quot;raw_ti
 <div id="machine-learning" class="section level3">
 <h3>Machine Learning</h3>
 <p>The idea is to use a random forest to create the model. To limit computing time, I decided to use cross validation with k-fold of 3. I was not able to spend more computing time even if resampling might lead to a better fit.</p>
-<pre class="r"><code>mod_fit &lt;- train(classe ~ ., method=&quot;rf&quot;, data=train_test_data_f, prox=TRUE, trControl = trainControl(method=&quot;cv&quot;, number = 3))
+<pre class="r"><code>mod_fit &lt;- train(classe ~ ., method=&quot;rf&quot;, data=train_data_f, prox=TRUE, trControl = trainControl(method=&quot;cv&quot;, number = 3))
 mod_fit </code></pre>
 <pre><code>## Random Forest 
 ## 
-## 96 samples
-## 49 predictors
-##  5 classes: 'A', 'B', 'C', 'D', 'E' 
+## 19526 samples
+##    49 predictors
+##     5 classes: 'A', 'B', 'C', 'D', 'E' 
 ## 
 ## No pre-processing
 ## Resampling: Cross-Validated (3 fold) 
-## Summary of sample sizes: 64, 64, 64 
+## Summary of sample sizes: 13018, 13017, 13017 
 ## Resampling results across tuning parameters:
 ## 
-##   mtry  Accuracy   Kappa      Accuracy SD  Kappa SD  
-##    2    0.5729167  0.4558719  0.03608439   0.04478129
-##   27    0.6041667  0.4997085  0.10974639   0.14382048
-##   53    0.6041667  0.4990891  0.10974639   0.14386587
+##   mtry  Accuracy   Kappa      Accuracy SD   Kappa SD  
+##    2    0.9965175  0.9955948  0.0004936066  0.0006244280
+##   27    0.9990781  0.9988340  0.0001537161  0.0001944286
+##   53    0.9977978  0.9972145  0.0007883457  0.0009972306
 ## 
 ## Accuracy was used to select the optimal model using  the largest value.
 ## The final value used for the model was mtry = 27.</code></pre>
